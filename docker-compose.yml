@@ -1,0 +1,59 @@
+services:
+  broker-rabbitmq:
+    image: "rabbitmq:3.7.14-management"
+    container_name: "rabbit"
+    environment:
+      - RABBITMQ_DEFAULT_USER=rabbit_user
+      - RABBITMQ_DEFAULT_PASS=rabbit_password
+  db-mysql:
+    image: mysql
+    container_name: "db"
+    restart: always
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    environment:
+      MYSQL_RANDOM_ROOT_PASSWORD: true
+      MYSQL_PASSWORD: "${USER_DB_PASSWORD}"
+      MYSQL_USER: myuser
+      MYSQL_DATABASE: mydb
+  migration:
+    build: .
+    environment:
+      - APP_ENV=${APP_ENV}
+    command: flask db upgrade
+    depends_on:
+      - db-mysql
+  flask:
+    build: .
+    container_name: "flask"
+    ports:
+     - "5000:5000"
+    environment:
+      - APP_ENV=${APP_ENV}
+    depends_on:
+      - broker-rabbitmq
+      - db-mysql
+      - migration
+  api-worker:
+    build: .
+    command: celery worker --workdir=. -A tasks.celery --loglevel=info
+    environment:
+      - APP_ENV=${APP_ENV}
+    depends_on:
+      - broker-rabbitmq
+      - db-mysql
+      - migration
+  api-beat:
+    build: .
+    command: celery beat -A tasks.celery --loglevel=info
+    environment:
+      - APP_ENV=${APP_ENV}
+    depends_on:
+      - broker-rabbitmq
+      - db-mysql
+      - migration
+
+volumes:
+    db_data:
